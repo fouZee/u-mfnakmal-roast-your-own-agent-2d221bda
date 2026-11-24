@@ -37,18 +37,27 @@ BANNED = ["hate", "stupid", "idiot", "dumb", "worthless", "kill", "die"]
 
 
 def score(line: str) -> float:
-    """Deterministic score: tight wording wins, a self-referential twist wins.
+    """Deterministic score: freshness wins, then punch, then tightness.
 
-    - length: shorter is tighter (up to 1.0 for <= 120 chars, fading after)
-    - self-reference: mentions 'my agent' / 'itself' (the roast's target)
-    - twist: a turn after a comma or em dash in the second half
+    The judge compares entries on funniness, freshness and tight wording.
+    Freshness here means concrete detail from this actual build (numbers,
+    "GitHub", "rate limit", "checks") — a roast only this agent, on this
+    run, could write — not a generic line any agent could produce.
+    Tightness only penalises lines past ~140 chars, so a specific line is
+    never beaten by a shorter generic one.
     """
     n = len(line)
-    length_score = 1.0 if n <= 120 else max(0.0, 1.0 - (n - 120) / 80.0)
-    self_ref = 1.0 if ("my agent" in line.lower() or "itself" in line) else 0.0
+    lowered = line.lower()
+    concrete = sum(
+        1
+        for token in ("24", "57", "github", "rate limit", "checks", "commit")
+        if token in lowered
+    )
+    specificity = min(1.0, concrete / 3.0)
     tail = line[len(line) // 2:]
     twist = 1.0 if any(m in tail for m in ["—", ", then", ", but", " — "]) else 0.0
-    return 0.5 * length_score + 0.3 * self_ref + 0.2 * twist
+    length_score = 1.0 if n <= 140 else max(0.0, 1.0 - (n - 140) / 60.0)
+    return 0.45 * specificity + 0.30 * twist + 0.25 * length_score
 
 
 def validate(line: str) -> list[str]:
@@ -87,6 +96,9 @@ def pick() -> str:
 
 def main() -> None:
     line = pick()
+    # Determinism self-check: picking twice must give the same line, so
+    # two runs of the entry always produce the same /output/entry.txt.
+    assert pick() == line, "non-deterministic pick"
     out_dir = os.environ.get("OUTPUT_DIR", "/output")
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, "entry.txt")
